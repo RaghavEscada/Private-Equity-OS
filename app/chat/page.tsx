@@ -148,23 +148,8 @@ export default function ChatPage() {
   }
 
   return (
-    <div className="fixed inset-0 flex flex-col bg-black text-white overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-white/10 bg-black/90 backdrop-blur-sm shrink-0">
-        <span className="text-xs text-white/60">
-          Signed in
-        </span>
-        <Button
-          size="sm"
-          variant="outline"
-          onClick={handleSignOut}
-          className="border-white/30 text-white hover:bg-white/10 bg-white/5"
-        >
-          Sign out
-        </Button>
-      </div>
-      <div className="flex-1 overflow-hidden">
-        <DealChat />
-      </div>
+    <div className="fixed inset-0 overflow-hidden">
+      <DealChat />
     </div>
   )
 }

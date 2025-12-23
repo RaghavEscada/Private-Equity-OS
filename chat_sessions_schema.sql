@@ -55,3 +55,4 @@ CREATE TRIGGER update_chat_session_timestamp
 -- ============================================================================
 SELECT 'SUCCESS! Chat sessions and messages tables created.' as message;
 
+

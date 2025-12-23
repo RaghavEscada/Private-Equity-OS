@@ -15,7 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
-import { Send, Loader2, Home, Trash2, Check, Circle, FileText, FileCheck, ClipboardList, Upload, Briefcase, Copy, Download, CheckCircle2, RotateCcw, Edit2, X, ThumbsUp, ThumbsDown, Search, Command, Sparkles, Plus, MessageSquare, MoreVertical } from 'lucide-react'
+import { Send, Loader2, Trash2, Check, Circle, FileText, FileCheck, ClipboardList, Upload, Briefcase, Copy, Download, CheckCircle2, RotateCcw, Edit2, X, Sparkles, Plus, MessageSquare, MoreVertical } from 'lucide-react'
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -47,7 +47,7 @@ function formatCurrency(value: number) {
   }).format(value)
 }
 
-export function DealTable({ deals, onDealClick }: { deals: any[]; onDealClick?: (deal: any) => void }) {
+export function DealGrid({ deals, onDealClick }: { deals: any[]; onDealClick?: (deal: any) => void }) {
   if (!deals || deals.length === 0) return null
 
   const exportToCSV = () => {
@@ -132,7 +132,7 @@ export function DealTable({ deals, onDealClick }: { deals: any[]; onDealClick?: 
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {deals.map((deal, idx) => (
+        {deals.map((deal, idx) => (
           <button
             key={deal.id || idx}
             type="button"
@@ -220,6 +220,81 @@ export function DealTable({ deals, onDealClick }: { deals: any[]; onDealClick?: 
           </button>
         ))}
       </div>
+    </div>
+  )
+}
+
+function DealsInlineTable({ deals, onDealClick }: { deals: any[]; onDealClick?: (deal: any) => void }) {
+  if (!deals || deals.length === 0) return null
+
+  const formatStatus = (status: string) => {
+    return status?.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'N/A'
+  }
+
+  return (
+    <div className="mt-3 overflow-x-auto rounded-xl border border-white/10 bg-white/5">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-white/5 border-b border-white/10">
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Company
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Deal
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Sector
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Status
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-white/70">
+              Geography
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-right text-white/70">
+              Revenue
+            </TableHead>
+            <TableHead className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wide text-right text-white/70">
+              Valuation
+            </TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {deals.map((deal, idx) => (
+            <TableRow
+              key={deal.id || idx}
+              className="border-b border-white/5 last:border-b-0 hover:bg-white/5 cursor-pointer"
+              onClick={() => onDealClick?.(deal)}
+            >
+              <TableCell className="px-4 py-3">
+                <span className="text-sm font-semibold text-white">
+                  {deal.company_name || 'N/A'}
+                </span>
+              </TableCell>
+              <TableCell className="px-4 py-3">
+                <span className="text-sm text-white/80">
+                  {deal.deal_name || 'N/A'}
+                </span>
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-white/70">
+                {deal.sector || 'N/A'}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-white/80">
+                {formatStatus(deal.status)}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-white/70">
+                {deal.geography || 'N/A'}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-white text-right font-mono">
+                {deal.revenue ? formatCurrency(deal.revenue) : <span className="text-white/40">N/A</span>}
+              </TableCell>
+              <TableCell className="px-4 py-3 text-sm text-white text-right font-mono">
+                {deal.valuation_ask ? formatCurrency(deal.valuation_ask) : <span className="text-white/40">N/A</span>}
+              </TableCell>
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
     </div>
   )
 }
@@ -338,8 +413,6 @@ export default function DealChat() {
   const [mode, setMode] = useState<Mode>('deals')
   const [showDealForm, setShowDealForm] = useState(false)
   const [editingMessageId, setEditingMessageId] = useState<number | null>(null)
-  const [editingContent, setEditingContent] = useState<string>('')
-  const [searchQuery, setSearchQuery] = useState('')
   const [enhancing, setEnhancing] = useState(false)
   const [currentChatId, setCurrentChatId] = useState<string | null>(null)
   const [chatSessions, setChatSessions] = useState<ChatSession[]>([])
@@ -358,6 +431,7 @@ export default function DealChat() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
+  const sendingRef = useRef(false) // Guard against duplicate submissions
 
   const loadChatMessages = async (chatId: string) => {
     try {
@@ -377,7 +451,8 @@ export default function DealChat() {
         timestamp: new Date(msg.created_at).getTime()
       }))
 
-      setMessages(formattedMessages)
+      // Deduplicate messages before setting
+      setMessages(deduplicateMessages(formattedMessages))
       localStorage.setItem(STORAGE_KEY_CURRENT_CHAT, chatId)
     } catch (error) {
       console.error('Failed to load messages:', error)
@@ -451,6 +526,17 @@ export default function DealChat() {
     } catch (error) {
       console.error('Failed to update chat title:', error)
     }
+  }
+
+  // Deduplicate messages helper
+  const deduplicateMessages = (msgs: Message[]): Message[] => {
+    const seen = new Set<string>()
+    return msgs.filter(msg => {
+      const key = `${msg.role}:${msg.content}:${msg.timestamp || 0}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
   }
 
   // Load chat sessions and current chat
@@ -671,7 +757,9 @@ export default function DealChat() {
 
   const sendMessage = async (messageToSend?: string, regenerateIndex?: number) => {
     const messageContent = messageToSend || input.trim()
-    if (!messageContent || loading) return
+    // Guard against duplicate submissions
+    if (!messageContent || loading || sendingRef.current) return
+    sendingRef.current = true
 
     const userMessage: Message = { 
       role: 'user', 
@@ -793,9 +881,11 @@ export default function DealChat() {
       setThinkingSteps([])
     } finally {
       setLoading(false)
+      sendingRef.current = false
     }
   }
 
+  // Fallback parser for legacy messages without data field
   const parseMessageForData = (content: string) => {
     try {
       const jsonMatch = content.match(/\{[\s\S]*\}/)
@@ -1134,20 +1224,42 @@ export default function DealChat() {
             Deal Lab AI
           </h1>
               </Link>
-        </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                if (confirm('Clear all chat messages?')) {
-                  setMessages(getDefaultMessages(mode))
-                  localStorage.removeItem(STORAGE_KEY)
-                }
-              }}
-              className="text-white/60 hover:text-white hover:bg-white/10"
-            >
-              <Trash2 className="h-4 w-4" />
-            </Button>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  if (confirm('Clear all duplicate messages from this chat?')) {
+                    const deduplicated = deduplicateMessages(messages)
+                    setMessages(deduplicated)
+                  }
+                }}
+                className="text-white/60 hover:text-white hover:bg-white/10"
+                title="Remove duplicate messages"
+              >
+                Clean Up
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                asChild
+                className="text-white/60 hover:text-white hover:bg-white/10"
+              >
+                <Link href="/deals">CRM View</Link>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={async () => {
+                  await supabase.auth.signOut()
+                  window.location.reload()
+                }}
+                className="text-white/60 hover:text-white hover:bg-white/10"
+              >
+                Sign out
+              </Button>
+            </div>
       </div>
 
           {/* Mode Navigation */}
@@ -1292,9 +1404,7 @@ export default function DealChat() {
         ) : (
           <div className="container max-w-4xl mx-auto px-4 py-6 bg-black min-h-full">
             <div className="space-y-4">
-          {messages
-              .filter(msg => !searchQuery || msg.content.toLowerCase().includes(searchQuery.toLowerCase()))
-              .map((msg, idx) => {
+          {messages.map((msg, idx) => {
               // Use msg.data if available, otherwise try to parse from content
               const data = msg.data || parseMessageForData(msg.content)
               const isEditing = editingMessageId === idx && msg.role === 'user'
@@ -1355,10 +1465,7 @@ export default function DealChat() {
                               <MessageCopyButton content={msg.content} isUser={msg.role === 'user'} />
                               {msg.role === 'user' && (
                                 <button
-                                  onClick={() => {
-                                    setEditingMessageId(idx)
-                                    setEditingContent(msg.content)
-                                  }}
+                                  onClick={() => setEditingMessageId(idx)}
                                   className="p-1.5 rounded hover:bg-white/10"
                                   title="Edit message"
                                 >
@@ -1397,7 +1504,7 @@ export default function DealChat() {
                     {/* Show structured data prominently */}
                     {msg.role === 'assistant' && data?.deals && (
                     <div className="w-full">
-                        <DealTable
+                        <DealsInlineTable
                           deals={data.deals}
                           onDealClick={(deal) => {
                             setSelectedDeal(deal)

@@ -44,6 +44,15 @@ export function DealForm({ onSuccess, onClose }: { onSuccess?: () => void; onClo
     setLoading(true)
 
     try {
+      const {
+        data: { user },
+        error: userError,
+      } = await supabase.auth.getUser()
+
+      if (userError || !user) {
+        throw userError || new Error('You must be signed in to create a deal.')
+      }
+
       const { error } = await supabase.from('deals').insert({
         deal_name: formData.deal_name,
         company_name: formData.company_name,
@@ -56,6 +65,7 @@ export function DealForm({ onSuccess, onClose }: { onSuccess?: () => void; onClo
         analyst_owner: formData.analyst_owner || null,
         executive_summary: formData.executive_summary || null,
         key_risks: formData.key_risks || null,
+        user_id: user.id,
       })
 
       if (error) throw error

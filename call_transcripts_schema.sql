@@ -57,3 +57,4 @@ CREATE TRIGGER update_call_transcript_timestamp
 -- ============================================================================
 SELECT 'SUCCESS! Call transcripts and extracted updates tables created.' as message;
 
+

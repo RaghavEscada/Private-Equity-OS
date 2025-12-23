@@ -14,10 +14,10 @@ export default function Home() {
           </Link>
           <nav className="flex items-center gap-2">
             <Button variant="ghost" asChild>
-              <Link href="/chat">Deal&nbsp;Lab</Link>
+              <Link href="/chat">Chatbot</Link>
             </Button>
             <Button variant="ghost" asChild>
-              <Link href="/deals">Deals&nbsp;CRM</Link>
+              <Link href="/deals">CRM</Link>
             </Button>
           </nav>
         </div>
@@ -38,12 +38,15 @@ export default function Home() {
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button size="lg" asChild className="text-base px-8">
                 <Link href="/chat">
-                  Start Chatting
+                  Start Chatbot
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Link>
               </Button>
-              <Button size="lg" variant="outline" className="text-base px-8">
-                Learn More
+              <Button size="lg" variant="outline" asChild className="text-base px-8">
+                <Link href="/deals">
+                  View Deals CRM
+                  <ArrowRight className="ml-2 h-4 w-4" />
+                </Link>
               </Button>
             </div>
           </div>

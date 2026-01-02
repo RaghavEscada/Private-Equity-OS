@@ -23,8 +23,10 @@ import {
   Send,
   Bot,
   User,
+  Download,
 } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import FinancialMetricsClean from '@/components/ui/FinancialMetricsClean'
 
 type DealFile = {
   id: string
@@ -91,6 +93,11 @@ export default function DealDetailPage() {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const chatScrollRef = useRef<HTMLDivElement>(null)
+
+  // One-Pager Generator state
+  const [showOnePagerModal, setShowOnePagerModal] = useState(false)
+  const [onePagerContent, setOnePagerContent] = useState('')
+  const [generatingOnePager, setGeneratingOnePager] = useState(false)
 
   useEffect(() => {
     const loadDeal = async () => {
@@ -217,20 +224,11 @@ export default function DealDetailPage() {
 
     setExtractingTranscript(true)
     try {
-      const {
-        data: { user },
-        error: userError,
-      } = await supabase.auth.getUser()
-
-      if (userError || !user) {
-        throw userError || new Error('You must be signed in to add transcripts.')
-      }
-
       const { data: transcript, error: transcriptError } = await supabase
         .from('call_transcripts')
         .insert([{
           deal_id: deal.id,
-          user_id: user.id,
+          user_id: null, // Transcripts are shared (tied to deal, not user)
           transcript_text: transcriptText,
           call_title: transcriptTitle || `Call ${new Date().toLocaleDateString()}`,
           call_date: new Date().toISOString(),
@@ -349,6 +347,300 @@ export default function DealDetailPage() {
     }
   }
 
+  const handleApproveAllExtractions = async () => {
+    if (extractedUpdates.length === 0 || !deal) return
+
+    try {
+      // Approve all updates in database
+      const updateIds = extractedUpdates.map(u => u.id)
+      const { error: updateError } = await supabase
+        .from('extracted_deal_updates')
+        .update({ approval_status: 'approved' })
+        .in('id', updateIds)
+
+      if (updateError) throw updateError
+
+      // Build update object for deal
+      const dealUpdates: any = {}
+      extractedUpdates.forEach(update => {
+        dealUpdates[update.field_name] = update.new_value
+      })
+
+      // Update deal with all changes
+      const { error: dealError } = await supabase
+        .from('deals')
+        .update(dealUpdates)
+        .eq('id', deal.id)
+
+      if (dealError) throw dealError
+
+      // Update local state
+      setDeal((prev: any) => ({ ...prev, ...dealUpdates }))
+      setExtractedUpdates([])
+
+      // Mark associated transcript as approved
+      if (extractedUpdates.length > 0) {
+        const transcriptId = extractedUpdates[0].transcript_id
+        await supabase
+          .from('call_transcripts')
+          .update({ extraction_status: 'approved' })
+          .eq('id', transcriptId)
+
+        setCallTranscripts(prev =>
+          prev.map(t => t.id === transcriptId ? { ...t, extraction_status: 'approved' as const } : t)
+        )
+      }
+
+      alert(`Successfully approved ${extractedUpdates.length} changes!`)
+    } catch (error) {
+      console.error('Failed to approve all extractions:', error)
+      alert('Failed to approve all changes. Please try again.')
+    }
+  }
+
+  const handleRejectAllExtractions = async () => {
+    if (extractedUpdates.length === 0) return
+    
+    if (!confirm('Are you sure you want to reject all extracted changes?')) return
+
+    try {
+      const updateIds = extractedUpdates.map(u => u.id)
+      const { error } = await supabase
+        .from('extracted_deal_updates')
+        .update({ approval_status: 'rejected' })
+        .in('id', updateIds)
+
+      if (error) throw error
+      setExtractedUpdates([])
+    } catch (error) {
+      console.error('Failed to reject all extractions:', error)
+      alert('Failed to reject all changes. Please try again.')
+    }
+  }
+
+  const handleGenerateOnePager = async () => {
+    if (!deal) return
+    
+    setGeneratingOnePager(true)
+    setShowOnePagerModal(true)
+    setOnePagerContent('Generating your professional one-pager...')
+
+    try {
+      const res = await fetch('/api/generate-onepager', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          dealData: deal,
+          includeFinancials: true
+        }),
+      })
+
+      const data = await res.json()
+      
+      if (data.error) throw new Error(data.error)
+      
+      setOnePagerContent(data.onePager)
+    } catch (error: any) {
+      console.error('Failed to generate one-pager:', error)
+      setOnePagerContent(`Error generating one-pager: ${error.message}`)
+    } finally {
+      setGeneratingOnePager(false)
+    }
+  }
+
+  const handleCopyOnePager = () => {
+    navigator.clipboard.writeText(onePagerContent)
+    alert('One-pager copied to clipboard!')
+  }
+
+  const handleDownloadPDF = () => {
+    if (!onePagerContent || !deal) return
+
+    // Clean markdown fences and artefacts first
+    const cleaned = onePagerContent
+      .replace(/```[a-zA-Z]*\s*/g, '')
+      .replace(/```/g, '')
+      .trim()
+
+    // Get logo as absolute URL for PDF
+    const logoPath = `${window.location.origin}/pflogobg.webp`
+
+    // Create a clean, centered printable HTML document
+    const htmlContent = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>${deal.company_name} - Investment One-Pager</title>
+  <style>
+    @page {
+      margin: 0.75in;
+      size: letter;
+    }
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.7;
+      color: #111827;
+      background: #ffffff;
+      font-size: 11pt;
+    }
+    .page {
+      max-width: 750px;
+      margin: 0 auto;
+    }
+    .header {
+      text-align: center;
+      padding-bottom: 24px;
+      margin-bottom: 24px;
+      border-bottom: 2px solid #e5e7eb;
+    }
+    .logo {
+      width: 70px;
+      height: 70px;
+      margin: 0 auto 12px auto;
+    }
+    .logo img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .title {
+      font-size: 28px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      margin-bottom: 4px;
+      color: #0f172a;
+    }
+    .subtitle {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1.4px;
+      color: #6b7280;
+      margin-bottom: 4px;
+    }
+    .meta {
+      font-size: 10px;
+      color: #9ca3af;
+    }
+    h1 {
+      font-size: 20pt;
+      font-weight: 700;
+      margin: 28px 0 14px 0;
+      color: #111827;
+    }
+    h2 {
+      font-size: 14pt;
+      font-weight: 600;
+      margin: 22px 0 10px 0;
+      color: #1f2933;
+    }
+    h3 {
+      font-size: 12pt;
+      font-weight: 600;
+      margin: 18px 0 8px 0;
+      color: #374151;
+    }
+    p {
+      margin-bottom: 10px;
+      font-size: 11pt;
+      color: #374151;
+    }
+    strong {
+      font-weight: 600;
+      color: #111827;
+    }
+    ul {
+      margin: 8px 0 12px 22px;
+    }
+    li {
+      margin-bottom: 6px;
+      font-size: 11pt;
+      color: #374151;
+    }
+    .section-divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, #e5e7eb, transparent);
+      margin: 24px 0;
+    }
+    .footer {
+      margin-top: 32px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+      color: #9ca3af;
+      font-size: 9px;
+    }
+    @media print {
+      body {
+        background: #ffffff;
+      }
+      .header, h1, h2 {
+        page-break-after: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="logo">
+        <img src="${logoPath}" alt="Logo" onerror="this.style.display='none'">
+      </div>
+      <div class="title">${deal.company_name}</div>
+      <div class="subtitle">Investment One-Pager</div>
+      <div class="meta">Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })} • Confidential</div>
+    </div>
+
+    ${cleaned
+      .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+      .replace(/^###\s+(.*)$/gm, '<h3>$1</h3>')
+      .replace(/^##\s+(.*)$/gm, '<div class="section-divider"></div><h2>$1</h2>')
+      .replace(/^#\s+(.*)$/gm, '<h1>$1</h1>')
+      .replace(/^- (.*)$/gm, '<li>$1</li>')
+      .replace(/(<li>[\s\S]*?<\/li>)/g, '<ul>$1</ul>')
+      .replace(/<\/ul>\s*<ul>/g, '')
+      .replace(/\n{2,}/g, '</p><p>')
+      .replace(/\n/g, ' ')
+      .replace(/^(?!<h[1-3]|<ul|<li|<p|<div|<strong)(.+)$/gm, '<p>$1</p>')
+      .replace(/<p>\s*<\/p>/g, '')
+    }
+
+    <div class="footer">
+      Prepared using PE OS • For internal investment analysis use only.
+    </div>
+  </div>
+</body>
+</html>
+    `
+
+    // Create a blob and download
+    const blob = new Blob([htmlContent], { type: 'text/html' })
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${deal.company_name.replace(/[^a-z0-9]/gi, '_')}_OnePager.html`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    URL.revokeObjectURL(url)
+
+    // Also open print dialog for PDF
+    const printWindow = window.open('', '_blank')
+    if (printWindow) {
+      printWindow.document.write(htmlContent)
+      printWindow.document.close()
+      printWindow.focus()
+      setTimeout(() => {
+        printWindow.print()
+      }, 250)
+    }
+  }
+
   const handleChatSubmit = async () => {
     if (!chatInput.trim() || chatLoading || !deal) return
 
@@ -434,6 +726,25 @@ export default function DealDetailPage() {
               </div>
               <div className="flex items-center gap-2">
                 <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleGenerateOnePager}
+                  disabled={generatingOnePager}
+                  className="bg-blue-600 hover:bg-blue-700 text-white border-0 shadow-lg"
+                >
+                  {generatingOnePager ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                      Generating...
+                    </>
+                  ) : (
+                    <>
+                      <FileText className="h-4 w-4 mr-2" />
+                      Generate One-Pager
+                    </>
+                  )}
+                </Button>
+                <Button
                   variant="ghost"
                   size="sm"
                   asChild
@@ -480,35 +791,10 @@ export default function DealDetailPage() {
             </div>
           </div>
 
-          {/* Financial Metrics */}
-          <Card className="bg-white/5 border-white/10 p-6">
-            <h3 className="text-sm font-semibold text-white/90 uppercase tracking-wide mb-4 flex items-center gap-2">
-              <Briefcase className="h-4 w-4" />
-              Financial Metrics
-            </h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
-              <div>
-                <p className="text-xs text-white/50 uppercase tracking-wide mb-2">Revenue</p>
-                <p className="text-2xl font-bold text-white font-mono">
-                  {deal.revenue ? formatCurrency(deal.revenue) : <span className="text-white/40">N/A</span>}
-                </p>
-              </div>
-              <div>
-                <p className="text-xs text-white/50 uppercase tracking-wide mb-2">Valuation Ask</p>
-                <p className="text-2xl font-bold text-white font-mono">
-                  {deal.valuation_ask ? formatCurrency(deal.valuation_ask) : <span className="text-white/40">N/A</span>}
-                </p>
-              </div>
-              {deal.ebitda && (
-                <div>
-                  <p className="text-xs text-white/50 uppercase tracking-wide mb-2">EBITDA</p>
-                  <p className="text-xl font-semibold text-white font-mono">
-                    {formatCurrency(deal.ebitda)}
-                  </p>
-                </div>
-              )}
-            </div>
-          </Card>
+          {/* Financial Metrics - Clean Analytics */}
+          <div className="mb-6">
+            <FinancialMetricsClean deal={deal} />
+          </div>
         </div>
 
         {/* Deal Information */}
@@ -638,7 +924,30 @@ export default function DealDetailPage() {
 
           {extractedUpdates.length > 0 && (
             <div className="mb-4 space-y-3">
-              <p className="text-xs text-white/60 font-medium">Pending Approvals</p>
+              <div className="flex items-center justify-between mb-2">
+                <p className="text-xs text-white/60 font-medium">
+                  Pending Approvals ({extractedUpdates.length})
+                </p>
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleRejectAllExtractions}
+                    className="h-6 px-2 text-xs border-red-500/50 text-red-400 hover:bg-red-500/10"
+                  >
+                    <X className="h-3 w-3 mr-1" />
+                    Reject All
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={handleApproveAllExtractions}
+                    className="h-6 px-2 text-xs bg-emerald-500/80 text-white hover:bg-emerald-500"
+                  >
+                    <Check className="h-3 w-3 mr-1" />
+                    Approve All
+                  </Button>
+                </div>
+              </div>
               {extractedUpdates.map((update) => (
                 <div
                   key={update.id}
@@ -1029,6 +1338,95 @@ export default function DealDetailPage() {
                   Process Transcript
                 </>
               )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* One-Pager Generator Modal */}
+      <Dialog open={showOnePagerModal} onOpenChange={setShowOnePagerModal}>
+        <DialogContent className="bg-zinc-950 border-white/20 text-white max-w-5xl max-h-[90vh] flex flex-col p-0">
+          {/* Beautiful Header with Logo */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 border-b border-blue-500/30 px-6 py-5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 bg-white rounded-lg p-2 flex items-center justify-center shadow-lg">
+                  <img src="/pflogobg.webp" alt="Logo" className="w-full h-full object-contain" />
+                </div>
+                <div>
+                  <DialogTitle className="text-2xl font-bold text-white mb-1">
+                    {generatingOnePager ? 'Generating One-Pager...' : deal?.company_name || 'Company One-Pager'}
+                  </DialogTitle>
+                  <DialogDescription className="text-blue-300/80 font-medium">
+                    Investment One-Pager • {new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}
+                  </DialogDescription>
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-xs text-white/60 uppercase tracking-wider mb-1">Confidential</div>
+                <div className="text-xs text-white/40">PE OS Platform</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-6 py-6 bg-gradient-to-b from-zinc-950 to-zinc-900">
+            {generatingOnePager ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="h-8 w-8 animate-spin text-white/60" />
+              </div>
+            ) : (
+              <div className="prose prose-invert max-w-none">
+                <div
+                  className="text-white/90 leading-relaxed"
+                  style={{ fontFamily: 'Inter, system-ui, sans-serif' }}
+                  dangerouslySetInnerHTML={{
+                    __html: onePagerContent
+                      .replace(/```[a-zA-Z]*\s*/g, '')
+                      .replace(/```/g, '')
+                      .replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>')
+                      .replace(/^###\s+(.*)$/gm, '<h3 class="text-lg font-bold text-white mt-6 mb-3">$1</h3>')
+                      .replace(/^##\s+(.*)$/gm, '<h2 class="text-xl font-bold text-blue-300 mt-8 mb-4 pb-2 border-b border-white/10">$1</h2>')
+                      .replace(/^#\s+(.*)$/gm, '<h1 class="text-2xl font-bold text-white mt-4 mb-4">$1</h1>')
+                      .replace(/^- (.*)$/gm, '<li class="mb-1">$1</li>')
+                      .replace(/(<li[\s\S]*?<\/li>)/g, '<ul class="list-disc list-inside space-y-1">$1</ul>')
+                      .replace(/<\/ul>\s*<ul class="list-disc list-inside space-y-1">/g, '')
+                      .replace(/\n{2,}/g, '</p><p class="text-white/80 mb-3 text-[14px] leading-7">')
+                      .replace(/\n/g, ' ')
+                      .replace(/^(?!<h[1-3]|<ul|<li|<p|<div|<strong)(.+)$/gm, '<p class="text-white/80 mb-3 text-[14px] leading-7">$1</p>')
+                      .replace(/<p class="text-white\/80 mb-3 text-\[14px] leading-7"><\/p>/g, '')
+                  }}
+                />
+              </div>
+            )}
+          </div>
+
+          <DialogFooter className="gap-3 border-t border-white/10 pt-4">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setShowOnePagerModal(false)}
+              className="border-white/40 bg-white/5 text-white hover:bg-white/15"
+            >
+              Close
+            </Button>
+            <Button
+              type="button"
+              onClick={handleCopyOnePager}
+              disabled={generatingOnePager || !onePagerContent}
+              variant="outline"
+              className="border-white/40 bg-white/5 text-white hover:bg-white/15"
+            >
+              <FileText className="h-4 w-4 mr-2" />
+              Copy
+            </Button>
+            <Button
+              type="button"
+              onClick={handleDownloadPDF}
+              disabled={generatingOnePager || !onePagerContent}
+              className="bg-emerald-600 text-white hover:bg-emerald-700"
+            >
+              <Download className="h-4 w-4 mr-2" />
+              Download PDF
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -81,6 +81,14 @@ export default function DealsPage() {
             </div>
             <Button
               size="sm"
+              variant="outline"
+              className="border-white/30 text-white hover:bg-white/10"
+              asChild
+            >
+              <Link href="/analysts">Analysts</Link>
+            </Button>
+            <Button
+              size="sm"
               className="bg-white text-black font-medium hover:bg-white/90"
               asChild
             >

@@ -432,9 +432,12 @@ export default function DealChat() {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const [isInitialized, setIsInitialized] = useState(false)
   const sendingRef = useRef(false) // Guard against duplicate submissions
+  const loadingMessagesRef = useRef(false) // Guard against saving while loading
 
   const loadChatMessages = async (chatId: string) => {
     try {
+      loadingMessagesRef.current = true // Set flag before loading
+      
       const { data: messagesData, error } = await supabase
         .from('chat_messages')
         .select('*')
@@ -454,8 +457,14 @@ export default function DealChat() {
       // Deduplicate messages before setting
       setMessages(deduplicateMessages(formattedMessages))
       localStorage.setItem(STORAGE_KEY_CURRENT_CHAT, chatId)
+      
+      // Clear flag after a short delay to prevent immediate save
+      setTimeout(() => {
+        loadingMessagesRef.current = false
+      }, 1000)
     } catch (error) {
       console.error('Failed to load messages:', error)
+      loadingMessagesRef.current = false
     }
   }
 
@@ -531,8 +540,16 @@ export default function DealChat() {
   // Deduplicate messages helper
   const deduplicateMessages = (msgs: Message[]): Message[] => {
     const seen = new Set<string>()
+    const seenIds = new Set<string>()
     return msgs.filter(msg => {
-      const key = `${msg.role}:${msg.content}:${msg.timestamp || 0}`
+      // If message has an ID, use that as primary deduplication key
+      if (msg.id) {
+        if (seenIds.has(msg.id)) return false
+        seenIds.add(msg.id)
+      }
+      
+      // Also deduplicate by content (in case same message appears with different IDs)
+      const key = `${msg.role}:${msg.content}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
@@ -600,7 +617,12 @@ export default function DealChat() {
 
   // Save messages to Supabase whenever they change
   useEffect(() => {
-    if (isInitialized && currentChatId && messages.length > 0) {
+    // Don't save if we're currently loading messages or not initialized
+    if (!isInitialized || !currentChatId || messages.length === 0 || loadingMessagesRef.current) {
+      return
+    }
+    
+    if (true) {
       const saveMessages = async () => {
         try {
           // Check if tables exist by trying to query
